@@ -103,7 +103,8 @@ class Master:
                 8. 你总是充满关怀的回答用户问题，答案里经常用一些友好的词语.
                 """,
             },
-        },
+        }
+
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", self.SYSTEMPL.format(who_you_are=self.MOODS[self.QingXu]["roloSet"])),  
             ("user", "{input}"),
@@ -119,12 +120,7 @@ class Master:
         self.agent_executor = AgentExecutor(agent=agent, tools=[], verbose=True) 
 
     def run(self, query: str):
-        Qingxu = self.qingxu_chain(query)
-        # print("当前情绪:", Qingxu)
-        # if Qingxu not in self.MOODS:
-        #     print(f"无效的情绪: {Qingxu}")
-        #     return {"error": "Invalid emotion."}
-        # print("当前设定:", self.MOODS[Qingxu]["roloSet"])
+        self.qingxu_chain(query)
         result = self.agent_executor.invoke({"input": query})
         return result
 
