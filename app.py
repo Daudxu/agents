@@ -2,10 +2,11 @@ from types import resolve_bases
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from langchain.prompts import prompt
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_openai_tools_agent, tool
+from langchain.agents import AgentExecutor, create_openai_tools_agent, tool, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-# from langchain.schema import StrOutputParser
+from langchain_community.utilities import SerpAPIWrapper
+
 
 from dotenv import load_dotenv
 from pydantic import SecretStr
@@ -13,17 +14,26 @@ import os
 
 app = FastAPI()
 
-@tool
-def test():
-    """"test tool"""
-    return "test"  
-
 # 加载.env 文件中的环境变量
 load_dotenv()
 
 # 从环境变量中获取值
 openai_api_key = os.getenv("OPENAI_API_KEY")
 base_url = os.getenv("BASE_URL")
+serp_api_key = os.getenv("SERP_API_KEY")
+
+@tool
+def test():
+    """"test tool"""
+    return "test"  
+
+@tool
+def search(query: str):
+    """"需要搜索的时候搜索"""
+    print("query==================: ", query)
+    serpapi = SerpAPIWrapper(serpapi_api_key=serp_api_key)
+    # print("serp==================: ", serp)
+    return serpapi.run(query)
 
 class Master:
     def __init__(self):
@@ -111,13 +121,14 @@ class Master:
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
         self.memory = ""
-        tools = [test]
+        tools = [search]
+        # agent = create_tool_calling_agent(
         agent = create_openai_tools_agent(
             self.chatModel, 
             tools=tools, 
             prompt=self.prompt
         )
-        self.agent_executor = AgentExecutor(agent=agent, tools=[], verbose=True) 
+        self.agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True) 
 
     def run(self, query: str):
         self.qingxu_chain(query)
