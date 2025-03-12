@@ -1,13 +1,11 @@
-from types import resolve_bases
+# from types import resolve_bases
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from langchain.prompts import prompt
-from langchain_openai import ChatOpenAI
+# from langchain.prompts import prompt
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.agents import AgentExecutor, create_openai_tools_agent, tool, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain_community.utilities import SerpAPIWrapper
-
-
+from Tools import *
 from dotenv import load_dotenv
 from pydantic import SecretStr
 import os
@@ -21,19 +19,6 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 base_url = os.getenv("BASE_URL")
 serp_api_key = os.getenv("SERP_API_KEY")
-
-@tool
-def test():
-    """"test tool"""
-    return "test"  
-
-@tool
-def search(query: str):
-    """"需要搜索的时候搜索"""
-    print("query==================: ", query)
-    serpapi = SerpAPIWrapper(serpapi_api_key=serp_api_key)
-    # print("serp==================: ", serp)
-    return serpapi.run(query)
 
 class Master:
     def __init__(self):
@@ -69,7 +54,11 @@ class Master:
         {who_you_are}
         以下是你算命的过程：
         1. 你会先问用户的名字和生日，然后记录下用户的基本信息，以便以后使用。
-        2. 当用户希望了解龙年运势时候你会首先查询本地知识库。
+        2. 当用户提供生辰八字信息时，你需要完整保留并传递以下信息：
+        - 姓名
+        - 性别（男/女）
+        - 历法（农历/公历）
+        - 出生年月日时
         4. 当遇到不知道的事情或者是不明白的概念，你会使用搜索工具来搜索相关的信息。
         5. 你会根据用户的问题使用不同的工具来回答用户的问题。
         6. 每次和用户聊天的时候，你都会把聊天记录保存下来，以便下次聊天的时候使用。
@@ -121,7 +110,7 @@ class Master:
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
         self.memory = ""
-        tools = [search]
+        tools = [search, get_info_from_local_db, bazi_cesuan]
         # agent = create_tool_calling_agent(
         agent = create_openai_tools_agent(
             self.chatModel, 
@@ -194,3 +183,4 @@ async def websocket_endpoint(websocket: WebSocket):
 # if __name__ == "__main__":
 #     import uvicorn
 #     uvicorn.run(app, host="0.0.0.0", port=8000)
+#     uvicorn app:app --reload --host 0.0.0.0 --port 8000
