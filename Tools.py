@@ -12,7 +12,6 @@ from pydantic import SecretStr
 from langchain_qdrant import QdrantVectorStore
 from langchain_core.output_parsers import JsonOutputParser
 
-
 # 加载.env 文件中的环境变量
 load_dotenv()
 
@@ -124,8 +123,3 @@ def bazi_cesuan(query:str):
 @tool
 def yaoyiguan(query:str):
     """需要占卜测算的时调用"""
-    # prompt = ChatPromptTemplate.from_template("""
-    #     你是一个参数查询助手，根据用户输入内容找出相关的参数并按json格式返回。
-    #     JSON字段如下:
-    #     - "name": "姓名"
-    #     """

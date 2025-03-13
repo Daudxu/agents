@@ -1,17 +1,18 @@
-# from types import resolve_bases
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-# from langchain.prompts import prompt
 from langchain_community import chat_message_histories
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.agents import AgentExecutor, create_openai_tools_agent, tool, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain.memory import ConversationTokenBufferMemory, ConversationBufferMemory
 from langchain_community.chat_message_histories import RedisChatMessageHistory
 from pydantic_core import Url
 from Tools import *
 from dotenv import load_dotenv
 from pydantic import SecretStr
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.types import Command
 import os
 
 app = FastAPI()
@@ -24,18 +25,19 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 base_url = os.getenv("BASE_URL")
 serp_api_key = os.getenv("SERP_API_KEY")
 
+
 class Master:
     def __init__(self):
         self.chatModel = ChatOpenAI(
-        base_url=base_url,
-        api_key=SecretStr(openai_api_key) if openai_api_key else None,
-        model="doubao-1-5-pro-32k-250115",
-        temperature=0.7,  # 直接传递 temperature
-        max_tokens=1000,  # 直接传递 max_tokens
-        streaming=True
+            base_url=base_url,
+            api_key=SecretStr(openai_api_key) if openai_api_key else None,
+            model="doubao-1-5-pro-32k-250115",
+            temperature=0.7,
+            max_tokens=1000,
+            streaming=True
         )
-        self.QingXu= "default"
-        self.MEMORY_KEY="chat_history"
+        self.QingXu = "default"
+        self.MEMORY_KEY = "chat_history"
         self.SYSTEMPL = """你是一个非常厉害的算命先生，你叫陈玉楼人稱陳大師。
         以下是你的个人设定：
         1. 你精通阴阳五行，能够算命，紫微斗数，姓名测算，占卜吉凶，测财运，看命格八字。
@@ -107,48 +109,44 @@ class Master:
         }
 
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.SYSTEMPL.format(who_you_are=self.MOODS[self.QingXu]["roloSet"])),  
+            ("system", self.SYSTEMPL.format(who_you_are=self.MOODS[self.QingXu]["roloSet"])),
             ("user", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
-        self.memory =self.get_memory()
-        memory = ConversationBufferMemory(
-            llm=self.chatModel,
-            human_prefix="user",
-            ai_prefix="陈大师",
-            memory_key=self.MEMORY_KEY,
-            return_messages=True,
-            max_token_limit=1000,
-            output_key="output"
-        )
-     
-        tools = [search, get_info_from_local_db, bazi_cesuan]
-        # agent = create_tool_calling_agent(
-        agent = create_openai_tools_agent( 
-            self.chatModel, 
-            tools=tools, 
-            prompt=self.prompt
-        )
-        self.agent_executor = AgentExecutor(
-            agent=agent, 
-            tools=tools,
-            memory=memory, 
-            verbose=True
-        ) 
 
-    def get_memory(self):
-        chat_message_histories = RedisChatMessageHistory(
-            url="redis://127.0.0.1:9527/0", 
-            session_id="session",
+        self.builder = StateGraph(MessagesState)
+        self.memory = MemorySaver()
+
+        tools = [search, get_info_from_local_db, bazi_cesuan]
+        llm_with_tools = self.chatModel.bind_tools(tools)
+
+        def chatbot(state: MessagesState):
+            return {"messages": [llm_with_tools.invoke(state["messages"])]}
+
+        self.builder.add_node("chatbot", chatbot)
+
+        tool_node = ToolNode(tools=tools)
+        self.builder.add_node("tools", tool_node)
+
+        self.builder.add_conditional_edges(
+            "chatbot",
+            tools_condition,
         )
-        print("chat_message_histories", chat_message_histories)
-        return chat_message_histories
+
+        self.builder.add_edge("tools", "chatbot")
+        self.builder.add_edge(START, "chatbot")
+
+        self.graph = self.builder.compile(checkpointer=self.memory)
 
     def run(self, query: str):
         self.qingxu_chain(query)
-        result = self.agent_executor.invoke({"input": query})
+        config = {"configurable": {"thread_id": "1"}}
+        input_message = {"role": "user", "content": query}
+        result = ""
+        for chunk in self.graph.stream({"messages": [input_message]}, config, stream_mode="values"):
+            if "messages" in chunk:
+                result = chunk["messages"][-1].content
         return result
-
 
     def qingxu_chain(self, query: str):
         prompt = """
@@ -166,27 +164,32 @@ class Master:
         self.QingXu = result
         return result
 
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
+
 
 @app.post("/chat")
 def chat(query: str):
     master = Master()
     return master.run(query)
-    # return {"response": "chat"}
+
 
 @app.post("/add_ursl")
 def add_url():
     return {"response": "add_url"}
 
+
 @app.post("/add_pdfs")
 def add_pdfs():
     return {"response": "add_pdfs"}
 
+
 @app.post("/add_texts")
 def add_texts():
     return {"response": "add_texts"}
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -201,11 +204,13 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"response": data})
     except Exception as e:
         print(f"发生错误: {e}")
-    finally: 
+    finally:
         # 关闭 WebSocket 连接
         await websocket.close()
 
+
 # if __name__ == "__main__":
 #     import uvicorn
+
 #     uvicorn.run(app, host="0.0.0.0", port=8000)
 #     uvicorn app:app --reload --host 0.0.0.0 --port 8000
