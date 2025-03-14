@@ -141,7 +141,7 @@ class Master:
         store_messages = chat_message_histories.messages
         if len(store_messages) > 10:
             prompt = ChatPromptTemplate.from_messages([
-                        ("system", self.SYSTEMPL+"\n这是一段你和用户的对话记忆，对其进行总结摘要，摘要使用第一人称'我'，并且提取其中的用户关键信息，如用户姓名、生日、爱好等，以如下格式返回：\n 总结摘要|用户关键信息\n例如 用户张三问候我好，我礼貌回复，然后他问我今年运势如何，我回答了他今年的运势，然后他告辞离开。|张三,生日1990年1月1日"),
+                        ("system", self.SYSTEMPL+"\n这是一段和你用户的对话记忆，对其进行总结摘要，摘要使用第一人称'我'，并且提取其中的用户关键信息，如用户姓名、生日、爱好等，以如下格式返回：\n 总结摘要|用户关键信息\n例如 用户张三问候我好，我礼貌回复，然后他问我今年运势如何，我回答了他今年的运势，然后他告辞离开。|张三,生日1990年1月1日"),
                         ("user", "{input}")
                     ])
             chain = prompt | self.chatModel   
@@ -199,14 +199,33 @@ def add_texts():
 async def websocket_endpoint(websocket: WebSocket):
     # 接受客户端的 WebSocket 连接
     await websocket.accept()
+    # 创建 Master 实例
+    master = Master()
+    
     try:
         while True:
             # 接收客户端发送的消息
             data = await websocket.receive_text()
-            # 向客户端发送响应消息
-            await websocket.send_json({"response": data})
+            
+            # 使用 Master 处理消息
+            try:
+                result = master.run(data)
+                # 提取回复内容
+                response = result.get("output", "")
+                # 发送响应给客户端
+                await websocket.send_json({
+                    "status": "success",
+                    "response": response
+                })
+            except Exception as e:
+                # 处理错误情况
+                await websocket.send_json({
+                    "status": "error",
+                    "message": f"处理消息时出错: {str(e)}"
+                })
+                
     except Exception as e:
-        print(f"发生错误: {e}")
+        print(f"WebSocket 错误: {e}")
     finally:
         # 关闭 WebSocket 连接
         await websocket.close()

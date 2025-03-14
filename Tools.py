@@ -126,5 +126,5 @@ def yaoyiguan(query:str):
 
 @tool
 def zaixianqiming(query:str):
-    """需要占卜测算的时调用"""
+    """用户在线取名则使用在线取名工具实现"""
     return "1"
