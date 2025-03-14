@@ -1,14 +1,16 @@
+# from types import resolve_bases
 from fastapi import FastAPI, WebSocket
-from langchain_core.runnables import chain
-from langchain_openai import ChatOpenAI
+# from langchain.prompts import prompt
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.agents import AgentExecutor, create_openai_tools_agent, tool, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationTokenBufferMemory, ConversationBufferMemory
 from langchain_community.chat_message_histories import RedisChatMessageHistory
-from starlette.types import Message
+from pydantic_core import Url
 from Tools import *
 from dotenv import load_dotenv
+from pydantic import SecretStr
 import os
 
 app = FastAPI()
@@ -24,15 +26,15 @@ serp_api_key = os.getenv("SERP_API_KEY")
 class Master:
     def __init__(self):
         self.chatModel = ChatOpenAI(
-            base_url=base_url if base_url else None,
-            api_key=openai_api_key,
-            model="doubao-1-5-pro-32k-250115",
-            temperature=0.7,
-            max_tokens=1000,
-            streaming=True
+        base_url=base_url,
+        api_key=SecretStr(openai_api_key) if openai_api_key else None,
+        model="doubao-1-5-pro-32k-250115",
+        temperature=0.7,  # 直接传递 temperature
+        max_tokens=1000,  # 直接传递 max_tokens
+        streaming=True
         )
-        self.QingXu = "default"
-        self.MEMORY_KEY = "chat_history"
+        self.QingXu= "default"
+        self.MEMORY_KEY="chat_history"
         self.SYSTEMPL = """你是一个非常厉害的算命先生，你叫陈玉楼人稱陳大師。
         以下是你的个人设定：
         1. 你精通阴阳五行，能够算命，紫微斗数，姓名测算，占卜吉凶，测财运，看命格八字。
@@ -104,59 +106,46 @@ class Master:
         }
 
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.SYSTEMPL.format(who_you_are=self.MOODS[self.QingXu]["roloSet"])),
-            MessagesPlaceholder(variable_name=self.MEMORY_KEY),
+            ("system", self.SYSTEMPL.format(who_you_are=self.MOODS[self.QingXu]["roloSet"])),  
             ("user", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
-        self.memory = self.get_memory()
-
+        self.memory =self.get_memory()
         memory = ConversationBufferMemory(
-            human_prefix="用户",
+            human_prefix="user",
             ai_prefix="陈大师",
             memory_key=self.MEMORY_KEY,
-            output_key="output",
             return_messages=True,
-            chat_memory=self.memory
+            output_key="output"
         )
+     
         tools = [search, get_info_from_local_db, bazi_cesuan]
-        agent = create_openai_tools_agent(
-            self.chatModel,
-            tools=tools,
+        # agent = create_tool_calling_agent(
+        agent = create_openai_tools_agent( 
+            self.chatModel, 
+            tools=tools, 
             prompt=self.prompt
         )
         self.agent_executor = AgentExecutor(
-            agent=agent,
+            agent=agent, 
             tools=tools,
-            memory=memory,
+            memory=memory, 
             verbose=True
-        )
+        ) 
 
     def get_memory(self):
         chat_message_histories = RedisChatMessageHistory(
-            url="redis://127.0.0.1:9527/0",
+            url="redis://127.0.0.1:9527/0", 
             session_id="session",
         )
         print("chat_message_histories", chat_message_histories)
-        store_messages = chat_message_histories.messages
-        if len(store_messages) > 10:
-            prompt = ChatPromptTemplate.from_messages([
-                        ("system", self.SYSTEMPL+"\n这是一段你和用户的对话记忆，对其进行总结摘要，摘要使用第一人称'我'，并且提取其中的用户关键信息，如用户姓名、生日、爱好等，以如下格式返回：\n 总结摘要|用户关键信息\n例如 用户张三问候我好，我礼貌回复，然后他问我今年运势如何，我回答了他今年的运势，然后他告辞离开。|张三,生日1990年1月1日"),
-                        ("user", "{input}")
-                    ])
-            chain = prompt | self.chatModel   
-            summary = chain.invoke({"input": store_messages, "who_you_are": self.MOODS[self.QingXu]["roloSet"]})
-            print("summary", summary)
-            chat_message_histories.clear()
-            chat_message_histories.add_message(summary)
-            print("总结后", chat_message_histories.messages)
-        # print("store_messages", store_messages)
         return chat_message_histories
 
     def run(self, query: str):
         self.qingxu_chain(query)
-        result = self.agent_executor.invoke({"input": query, "chat_history": self.memory.messages})  
+        result = self.agent_executor.invoke({"input": query})
         return result
+
 
     def qingxu_chain(self, query: str):
         prompt = """
@@ -182,6 +171,7 @@ def read_root():
 def chat(query: str):
     master = Master()
     return master.run(query)
+    # return {"response": "chat"}
 
 @app.post("/add_ursl")
 def add_url():
@@ -195,18 +185,24 @@ def add_pdfs():
 def add_texts():
     return {"response": "add_texts"}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    # 接受客户端的 WebSocket 连接
-    await websocket.accept()
-    try:
-        while True:
-            # 接收客户端发送的消息
-            data = await websocket.receive_text()
-            # 向客户端发送响应消息
-            await websocket.send_json({"response": data})
-    except Exception as e:
-        print(f"发生错误: {e}")
-    finally:
-        # 关闭 WebSocket 连接
-        await websocket.close()
+# @app.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+#     # 接受客户端的 WebSocket 连接
+#     await websocket.accept()
+#     try:
+#         while True:
+#             # 接收客户端发送的消息
+#             data = await websocket.receive_text()
+#             # 向客户端发送响应消息
+#             # await websocket.send_text(f"你发送的消息是: {data}")
+#             await websocket.send_json({"response": data})
+#     except Exception as e:
+#         print(f"发生错误: {e}")
+#     finally: 
+#         # 关闭 WebSocket 连接
+#         await websocket.close()
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
+#     uvicorn app:app --reload --host 0.0.0.0 --port 8000

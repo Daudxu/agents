@@ -31,7 +31,7 @@ def search(query: str):
     """"需要搜索的时候搜索"""
     try:
         print("query==================: ", query)
-        serpapi = SerpAPIWrapper(serpapi_api_key=serp_api_key)
+        serpapi = SerpAPIWrapper(serpapi_api_key=serp_api_key, search_engine="google")
         return serpapi.run(query)
     except Exception as e:
         print(f"搜索出错: {str(e)}")
@@ -40,13 +40,14 @@ def search(query: str):
 @tool
 def get_info_from_local_db(query: str):
     """只有搜索2025年才会使用这个工具"""
-    client = Qdrant(
-        QdrantClient(path="D:\testWork\agents\local_qdrant"),
-        "local_documents",
-        OpenAIEmbeddings(api_key=SecretStr(openai_api_key) if openai_api_key else None),
-    )
-    retriever = client.as_retriever(search_type="mmr")   
-    result = retriever.get_relevant_documents(query)
+    # client = Qdrant(
+    #     QdrantClient(path="D:\testWork\agents\local_qdrant"),
+    #     "local_documents",
+    #     OpenAIEmbeddings(api_key=SecretStr(openai_api_key) if openai_api_key else None),
+    # )
+    # retriever = client.as_retriever(search_type="mmr")   
+    # result = retriever.get_relevant_documents(query)
+    result = 1
     return result
 
 @tool
@@ -70,14 +71,12 @@ def bazi_cesuan(query:str):
     parser = JsonOutputParser()
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
     llm =  ChatOpenAI(
-        base_url=base_url,
-        api_key=SecretStr(openai_api_key) if openai_api_key else None,
-        model="doubao-1-5-lite-32k-250115",
-        model_kwargs={
-            "temperature": 0,
-            "max_tokens": 1000,
-        },
-        streaming=True
+            base_url=base_url if base_url else None,
+            api_key=openai_api_key,
+            model="doubao-1-5-pro-32k-250115",
+            temperature=0.7,
+            max_tokens=1000,
+            streaming=True
     ) 
     chain = prompt| llm | parser
     data = chain.invoke({"query": query})
@@ -123,3 +122,9 @@ def bazi_cesuan(query:str):
 @tool
 def yaoyiguan(query:str):
     """需要占卜测算的时调用"""
+    return "1"
+
+@tool
+def zaixianqiming(query:str):
+    """需要占卜测算的时调用"""
+    return "1"
